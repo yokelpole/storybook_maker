@@ -16,7 +16,7 @@ commander_1.program
     .option("-g, --genre <title>", "genre of the story", "children's story")
     .option("-p, --storyPlot <prompt>", "suggested plot for the hero of the story", "")
     .option("-h, --hero <name>", "name of the protagonist", "Gavin")
-    .option("-hg, --heroGender <male|female>", "male")
+    .option("-hg, --heroGender <male|female>", "gender of the protagonist", "male")
     .option("-htags, --heroTags <description>", "tag based description of the protagonist for rendering", "toddler")
     .option("-hd, --heroDescription <description>", "description of the protagonist for the story", "a boy toddler")
     .option("-sh, --support <name>", "name of the supporting character", "")
@@ -26,14 +26,14 @@ commander_1.program
     .option("-l, --lora <lora>", "lora to use for the hero", "gavin-15")
     .option("-sl, --supportLora <name>", "lora to use for the supporting character", "")
     .option("-pg, --pages <page>", "number of pages to generate", "5")
-    .option("-pr, --prompt <prompt>", `additional details to provide to the prompt - should just specify what the overall image looks like`, "masterpiece, 8k, high resolution, high quality, colorful")
+    .option("-pr, --prompt <prompt>", `additional details to provide to the prompt - should just specify what the overall image looks like`, "masterpiece, 8k, high resolution, high quality")
     .option("-s, --sampler <sampler>", "sampler to use", "DPM++ 2M Karras")
-    .option("-st, --steps <steps>", "number of steps to use in rendering", "36")
+    .option("-st, --steps <steps>", "number of steps to use in rendering", "40")
     .option("-x, --width <width>", "width of the image", "512")
     .option("-y, --height <height>", "height of the image", "512")
     .parse();
 async function makeStory() {
-    var _a, _b, _c;
+    var _a, _b, _c, _d;
     const opts = commander_1.program.opts();
     console.log("Options: ", opts);
     const { model, modelStableDiffusion, genre, storyPlot, hero, heroGender, heroDescription, heroTags: inputHeroTags, support, supportGender, supportDescription, supportTags: inputSupportTags, lora, supportLora, pages, prompt, sampler, steps, width, height, } = commander_1.program.opts();
@@ -86,12 +86,13 @@ async function makeStory() {
             characterDescriptionMap[support] = `<lora:${supportLora}:1>${Math.random() < 0.5 ? `easyphoto_face, ` : ""}${supportTags}`;
         }
         for (const character of filteredCharacters) {
+            const isHuman = (_c = checkRespJson.people) === null || _c === void 0 ? void 0 : _c.includes(character);
             if (!character.length)
                 continue;
             if (!characterDescriptionMap[character]) {
                 const descriptionPrompt = `Be creative and in a single sentence describe what ${character} looks like.
-         Include their gender as "a man", or "a woman".  
-         Include their ethnicity.
+         ${isHuman ? `Include their gender as "a man", or "a woman".` : ""}  
+         ${isHuman ? `Include their ethnicity.` : ""}
          Do not mention ${hero} or any other characters.
 
          Respond in JSON with the following format: {
@@ -130,7 +131,7 @@ async function makeStory() {
         const backgroundJson = JSON.parse(background.response);
         currentContext = background.context;
         story[index].background = backgroundJson.background;
-        if ((_c = checkRespJson.people) === null || _c === void 0 ? void 0 : _c.includes(hero)) {
+        if ((_d = checkRespJson.people) === null || _d === void 0 ? void 0 : _d.includes(hero)) {
             const heroDescriptionPrompt = `Be creative and in a single sentence describe how ${hero} would react to this paragraph: "${paragraph}" 
       Ensure we respect their description: ${heroTags}. 
       Do not mention hair, eye, or skin colour.

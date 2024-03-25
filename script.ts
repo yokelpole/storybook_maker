@@ -29,7 +29,11 @@ program
     ""
   )
   .option("-h, --hero <name>", "name of the protagonist", "Gavin")
-  .option("-hg, --heroGender <male|female>", "male")
+  .option(
+    "-hg, --heroGender <male|female>",
+    "gender of the protagonist",
+    "male"
+  )
   .option(
     "-htags, --heroTags <description>",
     "tag based description of the protagonist for rendering",
@@ -211,12 +215,13 @@ async function makeStory() {
     }
 
     for (const character of filteredCharacters) {
+      const isHuman = checkRespJson.people?.includes(character);
       if (!character.length) continue;
 
       if (!characterDescriptionMap[character]) {
         const descriptionPrompt = `Be creative and in a single sentence describe what ${character} looks like.
-         Include their gender as "a man", or "a woman".  
-         Include their ethnicity.
+         ${isHuman ? `Include their gender as "a man", or "a woman".` : ""}  
+         ${isHuman ? `Include their ethnicity.` : ""}
          Do not mention ${hero} or any other characters.
 
          Respond in JSON with the following format: {
