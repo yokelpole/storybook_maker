@@ -67,7 +67,7 @@ async function makeStory() {
     currentContext = characterNamesResp.context;
     const characterDescriptionMap = {};
     for (const [index, { paragraph }] of story.entries()) {
-        const checkPrompt = `Using this paragraph, tell me whether any people or animals other than ${hero} are visible: "${paragraph}".
+        const checkPrompt = `Using this paragraph, tell me what people or animals are visible: "${paragraph}".
       Refer to them by name from this list: ${characterNameRespJson.names.join(", ")}.
       Assume that any use of the word "they", "them", or "their" means the people and animals in the story.
       Only include the names of the people and animals that are explicitly mentioned.
@@ -149,6 +149,32 @@ async function makeStory() {
             /*Math.random() < 0.5 ? `easyphoto_face, ` :*/ ""}${heroTags}, ${heroDescriptionJson.description.toString()}`;
         }
     }
+    const heroTitlePrompt = `
+    Be creative and in a single sentence describe how ${hero} would look on the cover of a book called ${title}.
+    Ensure we respect their description: ${heroTags}.
+    Do not mention hair, eye, or skin colour.
+    ${support ? `Do not mention ${support} or any other characters.` : ""}
+    Do not use the words "they", "them", or "their".
+    Respond in JSON with the following format: {
+      "description": the description as a string - do not return an array
+    }
+  `;
+    const heroTitleDescription = await (0, apis_1.getOllamaString)(heroTitlePrompt, model, currentContext);
+    currentContext = heroTitleDescription.context;
+    const heroTitleDescriptionJson = JSON.parse(heroTitleDescription.response);
+    const supportTitlePrompt = `
+  Be creative and in a single sentence describe how ${support} would look on the cover of a book called ${title}.
+  Ensure we respect their description: ${supportTags}.
+  Do not mention hair, eye, or skin colour.
+  Do not mention ${hero} or any other characters.
+  Do not use the words "they", "them", or "their".
+  Respond in JSON with the following format: {
+    "description": the description as a string - do not return an array
+  }
+`;
+    const supportTitleDescription = await (0, apis_1.getOllamaString)(supportTitlePrompt, model, currentContext);
+    currentContext = supportTitleDescription.context;
+    const supportTitleDescriptionJson = JSON.parse(supportTitleDescription.response);
     console.log("### Character Descriptions: ", JSON.stringify(characterDescriptionMap, null, 2));
     const directoryPath = Math.floor(Date.now() / 1000).toString();
     await (0, promises_1.mkdir)(`./stories/${directoryPath}`, { recursive: true });
@@ -181,8 +207,10 @@ async function makeStory() {
     // Make up a title page image for the story.
     const titlePageStoryPage = {
         paragraph: title,
-        heroPrompt: `<lora:${lora}:1>${heroTags}, smiling, looking at the viewer`,
-        supportPrompt: `<lora:${supportLora}:1>${supportTags}, smiling, looking at the viewer`,
+        heroPrompt: `<lora:${lora}:1>${heroTags}, ${heroTitleDescriptionJson.description.toString()}`,
+        supportPrompt: support
+            ? `${characterDescriptionMap[support].toString()}, ${supportTitleDescriptionJson.description.toString()}`
+            : null,
         background: "a beautiful landscape, with a clear blue sky and a few fluffy clouds",
     };
     const titlePageImages = await (0, apis_1.getStableDiffusionImages)({

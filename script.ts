@@ -182,7 +182,7 @@ async function makeStory() {
 
   const characterDescriptionMap: Record<string, string> = {};
   for (const [index, { paragraph }] of story.entries()) {
-    const checkPrompt = `Using this paragraph, tell me whether any people or animals other than ${hero} are visible: "${paragraph}".
+    const checkPrompt = `Using this paragraph, tell me what people or animals are visible: "${paragraph}".
       Refer to them by name from this list: ${characterNameRespJson.names.join(
         ", "
       )}.
@@ -314,6 +314,46 @@ async function makeStory() {
     }
   }
 
+  const heroTitlePrompt = `
+    Be creative and in a single sentence describe how ${hero} would look on the cover of a book called ${title}.
+    Ensure we respect their description: ${heroTags}.
+    Do not mention hair, eye, or skin colour.
+    ${support ? `Do not mention ${support} or any other characters.` : ""}
+    Do not use the words "they", "them", or "their".
+    Respond in JSON with the following format: {
+      "description": the description as a string - do not return an array
+    }
+  `;
+  const heroTitleDescription = await getOllamaString(
+    heroTitlePrompt,
+    model,
+    currentContext
+  );
+  currentContext = heroTitleDescription.context;
+  const heroTitleDescriptionJson: {
+    description: string;
+  } = JSON.parse(heroTitleDescription.response);
+
+  const supportTitlePrompt = `
+  Be creative and in a single sentence describe how ${support} would look on the cover of a book called ${title}.
+  Ensure we respect their description: ${supportTags}.
+  Do not mention hair, eye, or skin colour.
+  Do not mention ${hero} or any other characters.
+  Do not use the words "they", "them", or "their".
+  Respond in JSON with the following format: {
+    "description": the description as a string - do not return an array
+  }
+`;
+  const supportTitleDescription = await getOllamaString(
+    supportTitlePrompt,
+    model,
+    currentContext
+  );
+  currentContext = supportTitleDescription.context;
+  const supportTitleDescriptionJson: {
+    description: string;
+  } = JSON.parse(supportTitleDescription.response);
+
   console.log(
     "### Character Descriptions: ",
     JSON.stringify(characterDescriptionMap, null, 2)
@@ -359,8 +399,12 @@ async function makeStory() {
   // Make up a title page image for the story.
   const titlePageStoryPage: StoryPage = {
     paragraph: title,
-    heroPrompt: `<lora:${lora}:1>${heroTags}, smiling, looking at the viewer`,
-    supportPrompt: `<lora:${supportLora}:1>${supportTags}, smiling, looking at the viewer`,
+    heroPrompt: `<lora:${lora}:1>${heroTags}, ${heroTitleDescriptionJson.description.toString()}`,
+    supportPrompt: support
+      ? `${characterDescriptionMap[
+          support
+        ].toString()}, ${supportTitleDescriptionJson.description.toString()}`
+      : null,
     background:
       "a beautiful landscape, with a clear blue sky and a few fluffy clouds",
   };
