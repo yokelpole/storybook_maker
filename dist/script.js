@@ -52,10 +52,11 @@ async function makeStory() {
     let currentContext = null;
     const { response: story, context: storyContext } = await (0, apis_1.getStoryPages)(fullPrompt, model);
     currentContext = storyContext;
-    const { response: storyName, context: storyNameContext } = await (0, apis_1.getOllamaString)(`What would be a good name for this story? Make it brief and catchy. Respond in JSON with the following format: {
+    const { response: titleResponse, context: titleContext } = await (0, apis_1.getOllamaString)(`What would be a good name for this story? Make it brief and catchy. Respond in JSON with the following format: {
         "story_name": the name as a string
       }`, model, currentContext);
-    currentContext = storyNameContext;
+    const title = JSON.parse(titleResponse).story_name;
+    currentContext = titleContext;
     const characterNamePromopt = `Tell me names we can use to refer to the people and animals in the story. 
     Only include important characters.
     Include ${hero} in the list.
@@ -83,7 +84,8 @@ async function makeStory() {
             ...(((_b = checkRespJson.animals) === null || _b === void 0 ? void 0 : _b.filter((x) => { var _a; return !((_a = x === null || x === void 0 ? void 0 : x.toLowerCase()) === null || _a === void 0 ? void 0 : _a.includes(hero.toLowerCase())) && (x === null || x === void 0 ? void 0 : x.length) >= 1; })) || []),
         ];
         if (support.length) {
-            characterDescriptionMap[support] = `<lora:${supportLora}:1>${Math.random() < 0.5 ? `easyphoto_face, ` : ""}${supportTags}`;
+            characterDescriptionMap[support] = `<lora:${supportLora}:1>${
+            /*Math.random() < 0.5 ? `easyphoto_face, ` :*/ ""}${supportTags}`;
         }
         for (const character of filteredCharacters) {
             const isHuman = (_c = checkRespJson.people) === null || _c === void 0 ? void 0 : _c.includes(character);
@@ -143,7 +145,8 @@ async function makeStory() {
             const heroDescription = await (0, apis_1.getOllamaString)(heroDescriptionPrompt, model, currentContext);
             currentContext = heroDescription.context;
             const heroDescriptionJson = JSON.parse(heroDescription.response);
-            story[index].heroPrompt = `<lora:${lora}:1>${Math.random() < 0.5 ? `easyphoto_face, ` : ""}${heroTags}, ${heroDescriptionJson.description.toString()}`;
+            story[index].heroPrompt = `<lora:${lora}:1>${
+            /*Math.random() < 0.5 ? `easyphoto_face, ` :*/ ""}${heroTags}, ${heroDescriptionJson.description.toString()}`;
         }
     }
     console.log("### Character Descriptions: ", JSON.stringify(characterDescriptionMap, null, 2));
@@ -176,25 +179,26 @@ async function makeStory() {
     }
     // TODO: Need to make the template be ready for this.
     // Make up a title page image for the story.
-    /*const titlePageImages = await getStableDiffusionImages({
-      prompt,
-      steps,
-      width,
-      height,
-      storyPage: {
-        paragraph: ``,
-        hero_description: physicalDescription,
-        background: "a vibrant sunset",
-        other_characters: [],
-      },
-      lora,
-      loraWeight,
-      physicalDescription: `looking at the camera, smiling, ${physicalDescription}`,
-      useRegions: false,
-      urlBase: "127.0.0.1:7860",
-    });*/
+    const titlePageStoryPage = {
+        paragraph: title,
+        heroPrompt: `<lora:${lora}:1>${heroTags}, smiling, looking at the viewer`,
+        supportPrompt: `<lora:${supportLora}:1>${supportTags}, smiling, looking at the viewer`,
+        background: "a beautiful landscape, with a clear blue sky and a few fluffy clouds",
+    };
+    const titlePageImages = await (0, apis_1.getStableDiffusionImages)({
+        prompt,
+        steps,
+        width,
+        height,
+        sampler,
+        storyPage: titlePageStoryPage,
+        useRegions: !!(hero && support),
+        urlBase: "127.0.0.1:7860",
+    });
     const storyMetadata = {
-        characterDescriptionMap,
+        titlePageStoryPage,
+        hero,
+        support,
         lora,
         steps,
         sampler,
@@ -205,13 +209,14 @@ async function makeStory() {
         useRegions: story.map((x) => !!(x.heroPrompt && x.supportPrompt)),
     };
     await Promise.all([
-        (0, promises_1.writeFile)(`./stories/${directoryPath}/index.html`, (0, templateGenerator_1.getTemplate)(story, false)),
-        /*...titlePageImages.map((image, index) =>
-          writeFile(
-            `./stories/${directoryPath}/title-${index}.png`,
-            Buffer.from(image as string, "base64")
-          )
-        ),*/
+        (0, promises_1.writeFile)(`./stories/${directoryPath}/index.html`, (0, templateGenerator_1.getTemplate)({
+            pages: story,
+            isEdited: false,
+            title: titlePageStoryPage.paragraph,
+            hero,
+            support,
+        })),
+        ...titlePageImages.map((image, index) => (0, promises_1.writeFile)(`./stories/${directoryPath}/title-${index}.png`, Buffer.from(image, "base64"))),
         (0, promises_1.writeFile)(`./stories/${directoryPath}/story.json`, JSON.stringify(story)),
         (0, promises_1.writeFile)(`./stories/${directoryPath}/metadata.json`, JSON.stringify(storyMetadata)),
         (0, promises_1.copyFile)("./template/HobbyHorseNF.otf", `./stories/${directoryPath}/HobbyHorseNF.otf`),

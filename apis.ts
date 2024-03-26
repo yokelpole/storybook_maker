@@ -98,8 +98,8 @@ function getSharedStableDiffusionSettings({
 
   return {
     prompt: basePrompt,
-    /*negative_prompt:
-      "lowres, text, error, cropped, morbid, mutilated, out of frame, extra fingers, mutated hands, poorly drawn hands, poorly drawn face, bad proportions, extra limbs, missing arms, missing legs, extra arms, extra legs, fused fingers, too many fingers, long neck, username, watermark, signature, split frame, multiple frame, split panel, multi panel, multiple people",*/
+    negative_prompt:
+      "lowres, text, cropped, morbid, mutilated, out of frame, extra fingers, mutated hands, poorly drawn hands, extra limbs, missing arms, missing legs, extra arms, extra legs, fused fingers, too many fingers, long neck, username, watermark, signature, split frame, multiple frame, split panel, multi panel",
     seed: -1,
     steps,
     cfg_scale: 16,

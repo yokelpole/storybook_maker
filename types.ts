@@ -6,7 +6,6 @@ export type StoryPage = {
 };
 
 export type StoryMetadata = {
-  characterDescriptionMap: Record<string, string>;
   lora: string;
   steps: string;
   sampler: string;
@@ -15,4 +14,7 @@ export type StoryMetadata = {
   heroTags: string;
   useRegions: boolean[];
   prompt: string;
+  titlePageStoryPage: StoryPage;
+  hero: string;
+  support?: string;
 };

@@ -23,10 +23,19 @@ const template = `
     background-position: center top;
   }
 
+  h1 {
+    font-family: HobbyHorseNF;
+  }
+
   div.container {
     display: flex;
     justify-content: center;
     max-height: 100%
+  }
+  
+  div.title-page {
+    flex-direction: column;
+    text-align: center;
   }
 
   div.page {
@@ -42,8 +51,12 @@ const template = `
     justify-content: center;
   }
 
+  div.title-picture {
+    display: flex;
+    justify-content: center;
+  }
+
   div.story {
-    font-family: HobbyHorseNF;
     display: flex;
     align-items: center;
     margin: 10px;
@@ -184,6 +197,24 @@ const template = `
 </html>
 `;
 
+function getTitlePage(title: string, hero: string, support?: string): string {
+  return `
+  <div class="page active">
+    <div class="container title-page">
+      <h1>${title}</h1>
+
+      <div class="title-picture">
+        <img style="height: 36em; width: 36em;"src="./title.jpg" />
+      </div>
+
+      <h1>An AI Generated Story starring ${hero}${
+    support ? ` and ${support}` : ""
+  }</h1>
+    </div>
+  </div>
+  `;
+}
+
 function getStoryPage(
   paragraph: string,
   isEdited: boolean,
@@ -208,11 +239,26 @@ function getStoryPage(
 `;
 }
 
-export function getTemplate(pages: StoryPage[], isEdited: boolean): string {
+export function getTemplate({
+  title,
+  hero,
+  support,
+  pages,
+  isEdited,
+}: {
+  title: string;
+  hero: string;
+  support?: string;
+  pages: StoryPage[];
+  isEdited: boolean;
+}): string {
   return template.replace(
     "[##STORY##]",
-    pages
-      .map(({ paragraph }, index) => getStoryPage(paragraph, isEdited, index))
-      .join("\n")
+    [
+      getTitlePage(title, hero, support),
+      ...pages.map(({ paragraph }, index) =>
+        getStoryPage(paragraph, isEdited, index)
+      ),
+    ].join("\n")
   );
 }

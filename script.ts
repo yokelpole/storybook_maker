@@ -8,7 +8,7 @@ import {
 } from "./apis";
 import { getTemplate } from "./template/templateGenerator";
 import { WebUiManager } from "./WebUiManager";
-import { StoryMetadata } from "./types";
+import { StoryMetadata, StoryPage } from "./types";
 
 program
   .option("-m, --model <model>", "ollama model to use", "mistral")
@@ -154,7 +154,7 @@ async function makeStory() {
   );
   currentContext = storyContext;
 
-  const { response: storyName, context: storyNameContext } =
+  const { response: titleResponse, context: titleContext } =
     await getOllamaString(
       `What would be a good name for this story? Make it brief and catchy. Respond in JSON with the following format: {
         "story_name": the name as a string
@@ -162,7 +162,8 @@ async function makeStory() {
       model,
       currentContext
     );
-  currentContext = storyNameContext;
+  const title = JSON.parse(titleResponse).story_name;
+  currentContext = titleContext;
 
   const characterNamePromopt = `Tell me names we can use to refer to the people and animals in the story. 
     Only include important characters.
@@ -210,7 +211,7 @@ async function makeStory() {
 
     if (support.length) {
       characterDescriptionMap[support] = `<lora:${supportLora}:1>${
-        Math.random() < 0.5 ? `easyphoto_face, ` : ""
+        /*Math.random() < 0.5 ? `easyphoto_face, ` :*/ ""
       }${supportTags}`;
     }
 
@@ -308,7 +309,7 @@ async function makeStory() {
         description: string;
       } = JSON.parse(heroDescription.response);
       story[index].heroPrompt = `<lora:${lora}:1>${
-        Math.random() < 0.5 ? `easyphoto_face, ` : ""
+        /*Math.random() < 0.5 ? `easyphoto_face, ` :*/ ""
       }${heroTags}, ${heroDescriptionJson.description.toString()}`;
     }
   }
@@ -356,26 +357,28 @@ async function makeStory() {
 
   // TODO: Need to make the template be ready for this.
   // Make up a title page image for the story.
-  /*const titlePageImages = await getStableDiffusionImages({
+  const titlePageStoryPage: StoryPage = {
+    paragraph: title,
+    heroPrompt: `<lora:${lora}:1>${heroTags}, smiling, looking at the viewer`,
+    supportPrompt: `<lora:${supportLora}:1>${supportTags}, smiling, looking at the viewer`,
+    background:
+      "a beautiful landscape, with a clear blue sky and a few fluffy clouds",
+  };
+  const titlePageImages = await getStableDiffusionImages({
     prompt,
     steps,
     width,
     height,
-    storyPage: {
-      paragraph: ``,
-      hero_description: physicalDescription,
-      background: "a vibrant sunset",
-      other_characters: [],
-    },
-    lora,
-    loraWeight,
-    physicalDescription: `looking at the camera, smiling, ${physicalDescription}`,
-    useRegions: false,
+    sampler,
+    storyPage: titlePageStoryPage,
+    useRegions: !!(hero && support),
     urlBase: "127.0.0.1:7860",
-  });*/
+  });
 
   const storyMetadata: StoryMetadata = {
-    characterDescriptionMap,
+    titlePageStoryPage,
+    hero,
+    support,
     lora,
     steps,
     sampler,
@@ -389,14 +392,20 @@ async function makeStory() {
   await Promise.all([
     writeFile(
       `./stories/${directoryPath}/index.html`,
-      getTemplate(story, false)
+      getTemplate({
+        pages: story,
+        isEdited: false,
+        title: titlePageStoryPage.paragraph,
+        hero,
+        support,
+      })
     ),
-    /*...titlePageImages.map((image, index) =>
+    ...titlePageImages.map((image, index) =>
       writeFile(
         `./stories/${directoryPath}/title-${index}.png`,
         Buffer.from(image as string, "base64")
       )
-    ),*/
+    ),
     writeFile(`./stories/${directoryPath}/story.json`, JSON.stringify(story)),
     writeFile(
       `./stories/${directoryPath}/metadata.json`,
