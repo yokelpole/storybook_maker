@@ -110,8 +110,6 @@ function getSharedStableDiffusionSettings({
     sampler_name: sampler,
     send_images: true,
     save_images: true,
-    // TODO: Should this be higher? 0.75 is default.
-    // Could probably drop # of steps in resize if that is the case.
     denoisingStrength: 0.4,
   };
 }

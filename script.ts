@@ -1,14 +1,13 @@
 import { mkdir, writeFile, copyFile, access } from "node:fs/promises";
 import { program } from "commander";
 import {
-  getStoryPages,
   setStableDiffusionModelCheckpoint,
-  getOllamaString,
   getStableDiffusionImages,
 } from "./apis";
 import { getTemplate } from "./template/templateGenerator";
 import { WebUiManager } from "./WebUiManager";
 import { StoryMetadata, StoryPage } from "./types";
+import { createStory, createTitlePageStoryPage } from "./storyMaker";
 
 program
   .option("-m, --model <model>", "ollama model to use", "mistral")
@@ -70,7 +69,7 @@ program
   .option(
     "-pr, --prompt <prompt>",
     `additional details to provide to the prompt - should just specify what the overall image looks like`,
-    "masterpiece, 8k, high resolution, high quality"
+    "8k, high resolution, high quality"
   )
   .option("-s, --sampler <sampler>", "sampler to use", "DPM++ 2M Karras")
   .option("-st, --steps <steps>", "number of steps to use in rendering", "40")
@@ -134,233 +133,24 @@ async function makeStory() {
     `/home/kyle/Development/stable_diffusion/stable-diffusion-webui/models/Lora/${lora}.safetensors`
   );
 
-  const fullPrompt = `Make me a ${genre} about ${heroDescription} named ${hero} ${
-    storyPlot ? `where ${storyPlot} ` : ""
-  }in ${pages} separate parts. 
-  Do not mention hair, eye, or skin colour.
-  ${
-    support.length
-      ? `Include a person named ${support} that is ${supportDescription}.`
-      : ""
-  }
-
-  Respond in JSON by placing an array in a key called story that holds each part. 
-  Each array element contains an object with the following format: { "paragraph": the paragraph as a string }`;
-
-  let currentContext: number[] = null;
-  const { response: story, context: storyContext } = await getStoryPages(
-    fullPrompt,
-    model
-  );
-  currentContext = storyContext;
-
-  const { response: titleResponse, context: titleContext } =
-    await getOllamaString(
-      `What would be a good name for this story? Make it brief and catchy. Respond in JSON with the following format: {
-        "story_name": the name as a string
-      }`,
-      model,
-      currentContext
-    );
-  const title = JSON.parse(titleResponse).story_name;
-  currentContext = titleContext;
-
-  const characterNamePromopt = `Tell me names we can use to refer to the people and animals in the story. 
-    Only include important characters.
-    Include ${hero} in the list.
-    ${support.length ? `Include ${support} in the list.` : ""}
-    Respond in JSON by placing a an array of the names as strings in a key called names`;
-  const characterNamesResp = await getOllamaString(
-    characterNamePromopt,
-    model,
-    storyContext
-  );
-  const characterNameRespJson: {
-    names: string[];
-  } = JSON.parse(characterNamesResp.response);
-  currentContext = characterNamesResp.context;
-
-  const characterDescriptionMap: Record<string, string> = {};
-  for (const [index, { paragraph }] of story.entries()) {
-    const checkPrompt = `Using this paragraph, tell me what people or animals are visible: "${paragraph}".
-      Refer to them by name from this list: ${characterNameRespJson.names.join(
-        ", "
-      )}.
-      Assume that any use of the word "they", "them", or "their" means the people and animals in the story.
-      Only include the names of the people and animals that are explicitly mentioned.
-      Respond in JSON with the following format: {
-        "people": a list of the people,
-        "animals": a list of the animals
-      }
-    `;
-    const checkResp = await getOllamaString(checkPrompt, model, currentContext);
-    currentContext = checkResp.context;
-    const checkRespJson: {
-      people: string[];
-      animals: string[];
-    } = JSON.parse(checkResp.response);
-
-    const filteredCharacters = [
-      ...(checkRespJson.people?.filter(
-        (x) => !x?.toLowerCase()?.includes(hero.toLowerCase()) && x?.length >= 1
-      ) || []),
-      ...(checkRespJson.animals?.filter(
-        (x) => !x?.toLowerCase()?.includes(hero.toLowerCase()) && x?.length >= 1
-      ) || []),
-    ];
-
-    if (support.length) {
-      characterDescriptionMap[support] = `<lora:${supportLora}:1>${
-        /*Math.random() < 0.5 ? `easyphoto_face, ` :*/ ""
-      }${supportTags}`;
-    }
-
-    for (const character of filteredCharacters) {
-      const isHuman = checkRespJson.people?.includes(character);
-      if (!character.length) continue;
-
-      if (!characterDescriptionMap[character]) {
-        const descriptionPrompt = `Be creative and in a single sentence describe what ${character} looks like.
-         ${isHuman ? `Include their gender as "a man", or "a woman".` : ""}  
-         ${isHuman ? `Include their ethnicity.` : ""}
-         Do not mention ${hero} or any other characters.
-
-         Respond in JSON with the following format: {
-           "description": the description as a string - do not return an array
-         }
-        `;
-        const characterDescription = await getOllamaString(
-          descriptionPrompt,
-          model,
-          currentContext
-        );
-        const characterDescriptionJson: {
-          description: string;
-        } = JSON.parse(characterDescription.response);
-        currentContext = characterDescription.context;
-
-        characterDescriptionMap[character] =
-          characterDescriptionJson.description.toString();
-      }
-    }
-
-    const character =
-      filteredCharacters[Math.floor(Math.random() * filteredCharacters.length)];
-
-    if (filteredCharacters.length) {
-      const descriptionPrompt = `Be creative and in a single sentence describe how ${character} would react to this paragraph: "${paragraph}". 
-        Do not mention ${hero} or any other characters.
-        Do not use the words "they", "them", or "their".
-        Respond in JSON with the following format: {
-          "description": the description as a string - do not return an array
-        }
-      `;
-      //const descriptionPrompt = "say poop";
-      const description = await getOllamaString(
-        descriptionPrompt,
-        model,
-        currentContext
-      );
-      const descriptionJson: {
-        description: string;
-      } = JSON.parse(description.response);
-      currentContext = description.context;
-
-      story[index].supportPrompt = `${characterDescriptionMap[
-        character
-      ].toString()}, ${descriptionJson.description.toString()}`;
-    }
-
-    const backgroundPrompt = `Be creative and in a sentence or two describe what the scene looks like in this paragraph: "${paragraph}".
-    Do not mention ${hero}${
-      story[index].supportPrompt ? `, ${character},` : ""
-    } or any other characters.
-    Respond in JSON with the following format: {
-      "background": the description as a string - do not return an array
-    }
-  `;
-    const background = await getOllamaString(
-      backgroundPrompt,
-      model,
-      currentContext
-    );
-    const backgroundJson: {
-      background: string;
-    } = JSON.parse(background.response);
-    currentContext = background.context;
-    story[index].background = backgroundJson.background;
-
-    if (checkRespJson.people?.includes(hero)) {
-      const heroDescriptionPrompt = `Be creative and in a single sentence describe how ${hero} would react to this paragraph: "${paragraph}" 
-      Ensure we respect their description: ${heroTags}. 
-      Do not mention hair, eye, or skin colour.
-      ${character ? `Do not mention ${character} or any other characters.` : ""}
-      Do not use the words "they", "them", or "their".
-      Respond in JSON with the following format: {
-        "description": the description as a string - do not return an array
-      }`;
-      const heroDescription = await getOllamaString(
-        heroDescriptionPrompt,
-        model,
-        currentContext
-      );
-      currentContext = heroDescription.context;
-      const heroDescriptionJson: {
-        description: string;
-      } = JSON.parse(heroDescription.response);
-      story[index].heroPrompt = `<lora:${lora}:1>${
-        /*Math.random() < 0.5 ? `easyphoto_face, ` :*/ ""
-      }${heroTags}, ${heroDescriptionJson.description.toString()}`;
-    }
-  }
-
-  const heroTitlePrompt = `
-    Be creative and in a single sentence describe how ${hero} would look on the cover of a book called ${title}.
-    Ensure we respect their description: ${heroTags}.
-    Do not mention hair, eye, or skin colour.
-    ${support ? `Do not mention ${support} or any other characters.` : ""}
-    Do not use the words "they", "them", or "their".
-    Respond in JSON with the following format: {
-      "description": the description as a string - do not return an array
-    }
-  `;
-  const heroTitleDescription = await getOllamaString(
-    heroTitlePrompt,
-    model,
-    currentContext
-  );
-  currentContext = heroTitleDescription.context;
-  const heroTitleDescriptionJson: {
-    description: string;
-  } = JSON.parse(heroTitleDescription.response);
-
-  const supportTitlePrompt = `
-  Be creative and in a single sentence describe how ${support} would look on the cover of a book called ${title}.
-  Ensure we respect their description: ${supportTags}.
-  Do not mention hair, eye, or skin colour.
-  Do not mention ${hero} or any other characters.
-  Do not use the words "they", "them", or "their".
-  Respond in JSON with the following format: {
-    "description": the description as a string - do not return an array
-  }
-`;
-  const supportTitleDescription = await getOllamaString(
-    supportTitlePrompt,
-    model,
-    currentContext
-  );
-  currentContext = supportTitleDescription.context;
-  const supportTitleDescriptionJson: {
-    description: string;
-  } = JSON.parse(supportTitleDescription.response);
-
-  console.log(
-    "### Character Descriptions: ",
-    JSON.stringify(characterDescriptionMap, null, 2)
-  );
-
   const directoryPath = Math.floor(Date.now() / 1000).toString();
   await mkdir(`./stories/${directoryPath}`, { recursive: true });
+
+  const { story, title, characterDescriptionMap, ollamaContext } =
+    await createStory({
+      genre,
+      storyPlot,
+      hero,
+      heroDescription,
+      heroTags,
+      support,
+      supportDescription,
+      supportTags,
+      supportLora,
+      lora,
+      pages: Number(pages),
+      model,
+    });
 
   const webUi = new WebUiManager();
   await webUi.startProcess();
@@ -369,6 +159,28 @@ async function makeStory() {
 
   // Set the appropriate model.
   await setStableDiffusionModelCheckpoint(modelStableDiffusion);
+
+  const titlePageStoryPage: StoryPage = await createTitlePageStoryPage({
+    title,
+    hero,
+    heroTags,
+    support,
+    supportTags,
+    model,
+    characterDescriptionMap,
+    ollamaContext,
+    lora,
+  });
+
+  const titlePageImages = await getStableDiffusionImages({
+    prompt,
+    steps,
+    width,
+    height,
+    sampler,
+    storyPage: titlePageStoryPage,
+    useRegions: !!(hero && support),
+  });
 
   for (const [index, storyPage] of story.entries()) {
     console.log(storyPage);
@@ -381,7 +193,6 @@ async function makeStory() {
       storyPage,
       sampler,
       useRegions: !!(storyPage.heroPrompt && storyPage.supportPrompt),
-      urlBase: "127.0.0.1:7860",
     });
 
     for (const [imageIndex, image] of images.entries()) {
@@ -394,44 +205,6 @@ async function makeStory() {
       else imageBlobs[index].push(Buffer.from(image as string, "base64"));
     }
   }
-
-  // TODO: Need to make the template be ready for this.
-  // Make up a title page image for the story.
-  const titlePageStoryPage: StoryPage = {
-    paragraph: title,
-    heroPrompt: `<lora:${lora}:1>${heroTags}, ${heroTitleDescriptionJson.description.toString()}`,
-    supportPrompt: support
-      ? `${characterDescriptionMap[
-          support
-        ].toString()}, ${supportTitleDescriptionJson.description.toString()}`
-      : null,
-    background:
-      "a beautiful landscape, with a clear blue sky and a few fluffy clouds",
-  };
-  const titlePageImages = await getStableDiffusionImages({
-    prompt,
-    steps,
-    width,
-    height,
-    sampler,
-    storyPage: titlePageStoryPage,
-    useRegions: !!(hero && support),
-    urlBase: "127.0.0.1:7860",
-  });
-
-  const storyMetadata: StoryMetadata = {
-    titlePageStoryPage,
-    hero,
-    support,
-    lora,
-    steps,
-    sampler,
-    width,
-    height,
-    heroTags,
-    prompt,
-    useRegions: story.map((x) => !!(x.heroPrompt && x.supportPrompt)),
-  };
 
   await Promise.all([
     writeFile(
@@ -453,7 +226,19 @@ async function makeStory() {
     writeFile(`./stories/${directoryPath}/story.json`, JSON.stringify(story)),
     writeFile(
       `./stories/${directoryPath}/metadata.json`,
-      JSON.stringify(storyMetadata)
+      JSON.stringify({
+        titlePageStoryPage,
+        hero,
+        support,
+        lora,
+        steps,
+        sampler,
+        width,
+        height,
+        heroTags,
+        prompt,
+        useRegions: story.map((x) => !!(x.heroPrompt && x.supportPrompt)),
+      } as StoryMetadata)
     ),
     copyFile(
       "./template/HobbyHorseNF.otf",
